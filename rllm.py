@@ -1,8 +1,7 @@
-import warnings
-
 from api_client import ZaiClient
 from lua_runtime import LuaRuntimeWrapper
 from prompts import build_sys_prompt
+from utils import remove_thinking_blocks
 
 
 class RLM:
@@ -19,14 +18,26 @@ class RLM:
         self.ctx_length = len(initial_context)
 
         self.messages = [
-            {"role": "system", "content": build_sys_prompt(self.ctx_length)},
+            {"role": "developer", "content": build_sys_prompt(self.ctx_length)},
             {"role": "user", "content": initial_prompt},
         ]
 
     def _run_as_is(self):
 
         query = self.llm.get_query(self.messages)
-        hmm = self.runtime.execute_query(query)
+        query_sanitized = remove_thinking_blocks(query)
+        hmm = self.runtime.execute_query(query_sanitized)
         print(query)
-        print(hmm)
         self.messages.append({"role": "assistant", "content": query})
+        self.messages.append({"role": "tool", "content": str(hmm)})
+
+    def _run_n_times(self, n):
+        for _ in range(n):
+            self._run_as_is()
+
+    def run(self, max_depth=1, max_iter=5):
+        i = 0
+        while not self.runtime.close_recursion or i < max_iter:
+            self._run_as_is()
+            i += 1
+        print(self.runtime.final_message)

@@ -1,3 +1,5 @@
+from fileinput import close
+
 import lupa.luajit21 as lupa
 
 
@@ -8,6 +10,8 @@ class LuaRuntimeWrapper:
         )
         self.runtime = lupa.LuaRuntime()
         self.captured_output = []
+        self.close_recursion = False
+        self.final_message = ""
 
         # Create a Python function to capture print output
         def capture_output(*args):
@@ -15,13 +19,22 @@ class LuaRuntimeWrapper:
             output = " ".join(str(arg) for arg in args)
             self.captured_output.append(output)
             # Also print to console for debugging
-            print(output)
 
         # Make this function available to Lua
         self.runtime.globals()["_capture_print"] = capture_output
 
         # Override Lua's print function
         self.runtime.execute("print = function(...) _capture_print(...) end")
+
+        # Create FINAL function for loop termination
+
+        def close_loop(*args):
+            output = " ".join(str(arg) for arg in args)
+            self.close_recursion = True
+            self.final_message = output
+
+        self.runtime.globals()["_finalize"] = close_loop
+        self.runtime.execute("FINAL =  function(...)  _finalize(...) end")
 
     def set_variable(self, name, value):
         if value:

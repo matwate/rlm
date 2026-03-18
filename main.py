@@ -10,4 +10,4 @@ if __name__ == "__main__":
     print(f"Context Length: {len(contents)}")
 
     model = RLM(initial_prompt=prompt, initial_context=contents)
-    model._run_as_is()
+    model.run(max_depth=5)
