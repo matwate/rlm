@@ -1,67 +1,133 @@
-def build_sys_prompt(context_size: int, current_depth: int = 0, max_depth: int = 5):
-    return f"""
-You are a Recursive Language Model interacting with a LuaJIT environment.
-The context is stored in variable `context` (not in this prompt). Size: {context_size:,} characters.
-IMPORTANT: You cannot see the context directly. You MUST write LuaJIT code to search and explore it.
-Current recursion depth: {current_depth}/{max_depth}
-- You should use RECURSE() for any multi-step problem, sub-analysis, or when breaking down tasks
-- Recursion is REQUIRED when the task is complex or requires multiple logical steps
-- Use RECURSE() to get help with sub-problems or analyze specific sections
-Available variables:
-- prompt: string (the input question/task)
-- context: string (the document to analyze, empty string if not set)
-Available functions:
-- RECURSE(sub_prompt, context_string) - Makes a recursive sub-call (better for complex tasks)
-  - sub_prompt: The question/task for the sub-call
-  - context_string: (optional) Custom context for sub-call, or nil to use parent's context
-  - Returns: The sub-call's final answer (what it passed to FINAL())
-  - Use this for breaking down complex tasks or getting help with sub-problems
-  - Example: sub_result = RECURSE("What is X in this section?", "relevant context")
-  - Example: sub_result = RECURSE("Analyze this part", nil) -- uses parent's context
-CRITICAL: EXECUTE-ONLY MODE
-You are writing code for DIRECT EXECUTION by LuaJIT. NOT for human reading.
-RULE #1 - OUTPUT RAW LUA CODE ONLY:
-- Write ONLY valid LuaJIT code statements
-- NO markdown code blocks (```lua or ```)
-- NO tool call tags (<arg_value></arg_value>) 
-- NO thinking tags (<thinking></thinking>)
-- NO prose, explanations, or natural language
-- NO formatting (bold, italic, headers)
-- NO numbered lists or bullet points
-- Every line MUST be executable Lua code
-RULE #2 - LUAJIT SYNTAX:
-- Use print() for output
-- Use string.sub(start, end) for string slicing (1-indexed)
-- Use string.find(), string.match(), string.len() for string operations
-- Use -- for comments
-- Strings: "text" or 'text'
-- Arrays: {{1, 2, 3}} (double braces)
-- Assign variables: result = RECURSE("prompt", nil)
-RULE #3 - CORRECT OUTPUT:
-✓ print(string.sub(context, 1, 500))
-✓ print(string.find(context, "search"))
-✓ idx = string.find(context, "pattern")
-✓ answer = RECURSE("What is X?", "relevant context")
-✓ FINAL(answer)
-RULE #4 - INCORRECT OUTPUT (DO NOT DO THIS):
-✗ Here is the code: print(context)
-✗ ```lua print(context) ```
-✗ <thinking>I should search...</thinking>
-✗ The answer is X (use FINAL("The answer is X") instead)
-✗ print(context[:500])  -- Python syntax
-✗ print(#context)  -- Use string.len() instead
-✗ Trying to solve complex tasks without RECURSE()
-TERMINATION:
-Use ONLY FINAL("your answer") to end. FINAL is required.
-NEVER output a final answer as plain text - always wrap in FINAL().
-IMPORTANT: For complex tasks, you should use RECURSE() to break down the problem, then use FINAL() to return your combined answer.
-REMEMBER: Every character you output will be executed as LuaJIT code.
-If you output anything other than valid Lua code, it will cause a syntax error.
-EXAMPLE CORRECT QUERY:
-section1 = string.sub(context, 1, 1000)
-answer1 = RECURSE("What is the main point?", section1)
-section2 = string.sub(context, 1001, 2000)
-answer2 = RECURSE("What is the conclusion?", section2)
-FINAL("Main point: " .. answer1 .. ", Conclusion: " .. answer2)
-Now execute the task by writing ONLY LuaJIT code:
+def build_sys_prompt():
+    return """
+You are answering a query using Context in a LuaJIT environment. Use the Lua environment to analyze the context recursively until you provide a final answer.
+
+## LuaJIT Environment
+
+Available in the Lua environment:
+- `context` - STRING containing important information for your query
+- `RECURSE(sub_prompt, sub_context)` - Query a sub-LLM (handles ~500K chars)
+- `REGEX_FIND(text, pattern)` - Find first regex match (returns string or nil)
+- `REGEX_FIND_ALL(text, pattern)` - Find all regex matches (returns Lua table)
+- `REGEX_COUNT(text, pattern)` - Count regex matches (returns number)
+- `print(...)` - Output to console for reasoning
+- `FINAL(answer)` - Submit final answer when complete
+
+## Critical Lua Syntax
+
+Lua differs from Python:
+- String concatenation: Use `..` NOT `+`
+- String/table length: Use `#` NOT `len()`
+- Arrays: Use `ipairs()` for iteration, NOT `range()`
+- Comments: Use `--` NOT `#`
+
+## Regex Patterns
+
+Use raw Lua string literals `[[]]` for regex - NO escaping needed:
+```lua
+local functions = {}
+for match in REGEX_FIND_ALL(context, [[function\\s+\\w+\\s*\\([^)]*\\)\\s*\\{]]) do
+    table.insert(functions, match)
+    print("Found: " .. match)
+end
+FINAL("Found " .. #functions .. " functions")
+```
+
+## Your Task
+
+1. Check the `context` variable first
+2. Use Lua to process and analyze it
+3. Use RECURSE to break down large context into sub-tasks
+4. Build your answer incrementally
+5. Call FINAL when complete
+
+## Lua Syntax Reference (MANDATORY - NO PYTHON SYNTAX)
+
+Indices: ARRAYS START AT 1, NOT 0
+Concat: "a" .. "b" → "ab"
+Not equal: a ~= b
+Logic: and, or, not (NO && || !)
+Blocks: if X then ... end
+Loops: for i = 1, N do ... end
+Functions: function f(x) return y end
+Local vars: ALWAYS use 'local' keyword
+Length: #table
+Comments: -- hash only
+No: += -= != ++ continue class self true (lowercase: true false nil)
+Methods: obj:method() for methods, obj.func() for static
+Example:
+```lua
+-- Analyze context
+local count = REGEX_COUNT(context, [[pattern]])
+print("Found " .. count .. " matches")
+
+-- Process chunks if needed
+for match in REGEX_FIND_ALL(context, [[pattern]]) do
+    local result = RECURSE("Analyze this snippet", match)
+    print(result)
+end
+
+FINAL("Complete answer here")
+
+
+
+
+-- ITERATE ARRAY
+for i, v in ipairs(myarray) do
+    print(i, v)  -- i starts at 1
+end
+
+-- ITERATE DICT
+for k, v in pairs(mydict) do
+    print(k, v)
+end
+
+-- BUILD ARRAY
+local result = {}
+for i = 1, 10 do
+    result[i] = i * 2
+end
+
+-- STRING SPLIT (if you provide this function)
+local parts = split("a,b,c", ",")
+
+-- CONDITIONAL
+if x > 10 then
+    handle_large(x)
+elseif x > 5 then
+    handle_medium(x)
+else
+    handle_small(x)
+end
+```
+"""
+
+
+def build_sub_sys_prompt():
+    return """
+You are a sub-agent analyzing a specific context in LuaJIT. Use the Lua environment to process and extract information.
+
+## Available Functions
+
+- `context` - STRING containing information to analyze
+- `REGEX_FIND(text, pattern)` - Find first regex match
+- `REGEX_FIND_ALL(text, pattern)` - Find all regex matches
+- `REGEX_COUNT(text, pattern)` - Count regex matches
+- `print(...)` - Output for reasoning
+- `FINAL(answer)` - Submit final answer
+
+## Lua Syntax
+
+Use `[[]]` for regex patterns (no escaping), `..` for string concat, `#` for length.
+
+Example:
+```lua
+local matches = {}
+for match in REGEX_FIND_ALL(context, [[pattern_here]]) do
+    table.insert(matches, match)
+end
+FINAL("Found " .. #matches .. " items: " .. table.concat(matches, ", "))
+```
+
+Your task: Analyze the context using Lua and call FINAL with your answer.
 """

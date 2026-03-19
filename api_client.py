@@ -23,4 +23,4 @@ class ZaiClient:
     def get_query(self, messages):
         response = self.client.chat.completions.create(model=MODEL, messages=messages)
         content = response.choices[0].message.content
-        return self._clean_markdown(content)
+        return content

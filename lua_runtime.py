@@ -1,5 +1,3 @@
-from fileinput import close
-
 import lupa.luajit21 as lupa
 
 
@@ -43,6 +41,70 @@ class LuaRuntimeWrapper:
             "RECURSE = function(prompt, context) return _recurse(prompt, context) end"
         )
 
+        import re
+
+        def regex_find_all(text, pattern):
+            """Find all matches of regex pattern in text, returns Lua table"""
+            try:
+                matches = re.findall(pattern, text, re.MULTILINE)
+                # Convert to Lua table
+                lua_matches = []
+                for match in matches:
+                    if isinstance(match, tuple):
+                        # For grouped matches, return as string
+                        lua_matches.append("".join(match))
+                    else:
+                        lua_matches.append(match)
+                return lua_matches
+            except Exception as e:
+                return []
+
+        def regex_find(text, pattern):
+            """Find first match of regex pattern in text, returns match or nil"""
+            try:
+                match = re.search(pattern, text, re.MULTILINE)
+                if match:
+                    return match.group()
+                return None
+            except Exception as e:
+                return None
+
+        def regex_count(text, pattern):
+            """Count all matches of regex pattern in text"""
+            try:
+                matches = re.findall(pattern, text, re.MULTILINE)
+                return len(matches)
+            except Exception as e:
+                return 0
+
+        self.runtime.globals()["_regex_find_all"] = regex_find_all
+        self.runtime.globals()["_regex_find"] = regex_find
+        self.runtime.globals()["_regex_count"] = regex_count
+
+        # Register Lua-friendly functions
+        self.runtime.execute("""
+            REGEX_FIND_ALL = function(text, pattern)
+                local py_list = _regex_find_all(text, pattern)
+                local lua_table = {}
+                
+                -- Convert Python list to Lua table
+                -- Python lists in Lua bridges are usually 0-indexed.
+                -- We iterate and insert into a new table to ensure it is 1-indexed.
+                for i = 0, #py_list - 1 do
+                    table.insert(lua_table, py_list[i])
+                end
+                
+                return lua_table
+            end
+            
+            REGEX_FIND = function(text, pattern)
+                return _regex_find(text, pattern)
+            end
+            
+            REGEX_COUNT = function(text, pattern)
+                return _regex_count(text, pattern)
+            end        """)
+
     def set_variable(self, name, value):
         if value:
             escaped = value.replace("]]", "\\]]")
@@ -71,7 +133,14 @@ class LuaRuntimeWrapper:
                 result = self.runtime.eval(query)
             except lupa.LuaSyntaxError as e:
                 self.runtime.execute(query)
-                result = f"Lua Syntax Error: {e}"
+                result = (
+                    f"The following query presented this Syntax Error {e}:\n{query}"
+                )
+            except lupa.LuaError as e:
+                self.runtime.execute(query)
+                result = (
+                    f"The following query presented this Runtime Error {e}:\n{query}"
+                )
 
             # Return captured output (from print) or result (from eval)
             if self.captured_output:
@@ -81,9 +150,20 @@ class LuaRuntimeWrapper:
             else:
                 return None
         except lupa.LuaSyntaxError as e:
-            print(f"Lua Syntax Error: {e}")
+            error_msg = f"Lua Syntax Error: {e}"
+            print(f"{error_msg}")
             print(f"\nQuery was: {repr(query)}")
             raise
+        except lupa.LuaError as e:
+            # Handle all Lua-specific errors
+            error_msg = f"Lua Error: {e}"
+            print(f"{error_msg}")
+            print(f"\nQuery was: {repr(query)}")
+            raise
+
         except Exception as e:
-            print(f"Error: {e}")
+            # Handle any other unexpected errors
+            error_msg = f"Unexpected Error: {type(e).__name__}: {e}"
+            print(f"{error_msg}")
+            print(f"\nQuery was: {repr(query)}")
             raise
