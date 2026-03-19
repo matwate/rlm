@@ -1,9 +1,88 @@
+import logging
 import os
 
 import dotenv
+from dataclasses import dataclass
+
 
 dotenv.load_dotenv()
 
-API_KEY = os.getenv("ZAI_API_KEY")
-BASE_URL = "https://api.z.ai/api/coding/paas/v4"
-MODEL = "glm-4.7"
+
+@dataclass
+class Config:
+    """Configuration for RLM system"""
+
+    api_key: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    max_retries: int = 3
+    request_timeout: int = 60
+    log_level: str = "INFO"
+
+    def __post_init__(self):
+        """Load configuration from environment variables and validate"""
+        self.api_key = self.api_key or os.getenv("API_KEY")
+        self.base_url = self.base_url or os.getenv("BASE_URL")
+        self.model = self.model or os.getenv("MODEL")
+
+        if os.getenv("MAX_RETRIES"):
+            self.max_retries = int(os.getenv("MAX_RETRIES", "3"))
+
+        if os.getenv("REQUEST_TIMEOUT"):
+            self.request_timeout = int(os.getenv("REQUEST_TIMEOUT", "60"))
+
+        self.log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+
+        self._validate()
+        self._setup_logging()
+
+    def _validate(self):
+        """Validate required configuration"""
+        if not self.api_key:
+            raise ValueError(
+                "API_KEY environment variable is required. "
+                "Set it in your .env file or environment."
+            )
+
+        if not self.model:
+            raise ValueError(
+                "MODEL environment variable is required. "
+                "Set it in your .env file or environment."
+            )
+
+        if self.max_retries < 0:
+            raise ValueError("MAX_RETRIES must be non-negative")
+
+        if self.request_timeout <= 0:
+            raise ValueError("REQUEST_TIMEOUT must be positive")
+
+        valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+        if self.log_level not in valid_log_levels:
+            raise ValueError(
+                f"LOG_LEVEL must be one of {valid_log_levels}, got {self.log_level}"
+            )
+
+    def _setup_logging(self):
+        """Configure logging based on LOG_LEVEL"""
+        logging.basicConfig(
+            level=getattr(logging, self.log_level),
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        )
+
+    def log_config(self, logger: logging.Logger):
+        """Log current configuration (without sensitive data)"""
+        logger.info(f"Using model: {self.model}")
+        logger.info(f"Base URL: {self.base_url or 'default (provider-specific)'}")
+        logger.info(f"Max retries: {self.max_retries}")
+        logger.info(f"Request timeout: {self.request_timeout}s")
+        logger.info(f"Log level: {self.log_level}")
+
+
+config = Config()
+
+API_KEY = config.api_key
+BASE_URL = config.base_url
+MODEL = config.model
+MAX_RETRIES = config.max_retries
+REQUEST_TIMEOUT = config.request_timeout
+LOG_LEVEL = config.log_level

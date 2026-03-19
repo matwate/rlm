@@ -12,7 +12,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    prompt = "Explain to me the overall architecture of this library and what key insights should i take for building my own c libraries"
+    prompt = "Explain to me the overall architecture of this library and what key insights should i take for building my own c libraries, i'm passing a C header file to you in your environment!"
     contents = ""
     with open("./example/nob.h", "r") as f:
         contents = f.read()
