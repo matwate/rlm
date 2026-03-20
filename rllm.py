@@ -1,4 +1,5 @@
 import logging
+import re
 
 import utils
 from api_client import LLMClient
@@ -104,7 +105,7 @@ class RLM:
         sub_rlm.run()
         return sub_rlm.runtime.final_message
 
-    def _run_as_is(self) -> None:
+    def _run_as_is(self) -> bool:
         """Execute a single iteration of the RLM loop
 
         Raises:
@@ -126,14 +127,41 @@ class RLM:
                 try:
                     result = self.runtime.execute_query(q)
                     results.append(result)
+                    if self.runtime.close_recursion:
+                        logger.info(
+                            "FINAL() called, stopping execution of remaining code blocks"
+                        )
+                        return True
                 except Exception as e:
-                    # Capture the error and tell the LLM about it
                     error_msg = f"Error executing Lua code: {e}"
                     logger.error(error_msg)
                     results.append(error_msg)
 
+            if not self.runtime.close_recursion and "FINAL(" in response:
+                final_match = re.search(
+                    r"FINAL\s*\(\s*\[\[(.*?)\]\]\s*\)", response, re.DOTALL
+                )
+                if final_match:
+                    self.runtime.close_recursion = True
+                    self.runtime.final_message = final_match.group(1)
+                    logger.info("FINAL() found in plain text, stopping execution")
+                    return True
+
+            if self.runtime.close_recursion:
+                logger.info("FINAL() called, skipping message processing")
+                return True
+
             # If there were errors, include them in the feedback
-            if any(r and "Error" in r for r in results):
+            if any(
+                r
+                and (
+                    r.startswith("Error executing Lua code:")
+                    or r.startswith("Lua Syntax Error:")
+                    or r.startswith("Lua Error:")
+                    or r.startswith("Unexpected Error:")
+                )
+                for r in results
+            ):
                 self.messages.append(
                     {
                         "role": "user",
@@ -150,6 +178,7 @@ class RLM:
                         + "\n".join(r for r in results if r is not None),
                     }
                 )
+            return False
         except LLMClientError as e:
             logger.error(f"LLM API error in iteration: {e}")
             raise
@@ -172,8 +201,12 @@ class RLM:
         logger.info(f"Starting RLM run with max_iter={actual_max_iter}")
 
         while not self.runtime.close_recursion and i < actual_max_iter:
-            self._run_as_is()
-            print(f"Iteration: {i + 1}")
+            print(f"Iteration: {i + 1}, Depth: {self.current_depth}/{self.max_depth}")
+            continue_ = self._run_as_is()
+            print(f"Should end: {continue_}")
+            if continue_:
+                print(self.runtime.captured_output)
+                break
             i += 1
 
         if i == actual_max_iter:

@@ -26,4 +26,4 @@ if __name__ == "__main__":
         disable_guards=args.no_guards,
         quiet=args.quiet,
     )
-    model.run(max_iter=100)
+    model.run(max_iter=10)

@@ -11,6 +11,7 @@ You are in an interactive REPL environment:
 - Prefer short queries over long/complex ones
 - State is maintained between calls
 - Incremental, iterative approach works best
+- **Always wrap Lua code in markdown code blocks with the lua identifier**
 
 Available in the Lua environment:
 - context - STRING containing important information for your query
@@ -19,7 +20,11 @@ Available in the Lua environment:
 - REGEX_FIND_ALL(text, pattern) - Find all regex matches (returns Lua table, so ITERATE WITH IPAIRS)
 - REGEX_COUNT(text, pattern) - Count regex matches (returns number)
 - print(...) - Output to console for reasoning
-- FINAL(answer) - Submit final answer when complete
+- FINAL(answer) - Submit final answer when complete (STOPS all execution)
+  - For single-line: FINAL("Your answer here")
+  - For multiline: FINAL([[Your answer
+    can span multiple lines]])
+  - For formatted multiline: FINAL(TEXT("Line 1", "Line 2", "Line 3"))  
 
 **Keep it short and simple:** Break complex tasks into smaller steps, use short code blocks, avoid over-engineering.
 **You have multiple tries:** Not every message needs FINAL
@@ -42,6 +47,17 @@ Available in the Lua environment:
 local count = REGEX_COUNT(context, [[error]])
 print("Found " .. count .. " errors")
 FINAL("Total errors: " .. count)
+
+**Example - Multiline answer:**
+FINAL([[
+Analysis complete:
+- Found 5 errors
+- 3 warnings
+- All critical issues resolved
+]])
+
+**Example - Using TEXT() for multiline:**
+FINAL(TEXT("Analysis complete:", "Found 5 errors", "3 warnings", "All critical issues resolved"))
 
 **Example - RECURSE needed (complex):**
 local sections = REGEX_FIND_ALL(context, [[\n[^\n]+Section[^\n]*\n]])
@@ -150,6 +166,7 @@ FINAL("Found " .. #functions .. " functions")
 4. Process incrementally, building your answer step by step
 5. Use print() to see intermediate results
 6. Call FINAL when complete - your answer MUST be inside FINAL
+7. **Always wrap Lua code in markdown code blocks with the lua identifier**
 
 ## Lua Syntax Reference (MANDATORY - NO PYTHON SYNTAX)
 
@@ -227,6 +244,7 @@ You are in an interactive REPL environment:
 - Each response should be concise and direct
 - Prefer short queries over long/complex ones
 - Incremental, iterative approach works best
+- **Always wrap Lua code in markdown code blocks with the lua identifier**
 
 ## Available Functions
 
@@ -283,6 +301,7 @@ CORRECT: if condition then ... end or while condition do ... end
 - Use ipairs() for numeric iteration: for i, v in ipairs(table) do ... end
 - Use pairs() for dictionary iteration: for k, v in pairs(table) do ... end
 - Comments use -- not #
+- **Always wrap Lua code in markdown code blocks with the lua identifier**
 
 ## Example Patterns
 
@@ -292,6 +311,31 @@ if match then
     FINAL("Found phone: " .. match)
 else
     FINAL("No phone found")
+end
+
+**Pattern 1b: Multiline extraction**
+local match = REGEX_FIND(context, [[\d{3}-\d{3}-\d{4}]])
+if match then
+    FINAL([[
+Phone number search completed:
+Status: Found
+Phone: ]] .. match .. [[
+Location: Contact section
+]])
+else
+    FINAL([[
+Phone number search completed:
+Status: Not found
+Context: No phone numbers in provided text
+]])
+end
+
+**Pattern 1c: Using TEXT() for multiline**
+local match = REGEX_FIND(context, [[\d{3}-\d{3}-\d{4}]])
+if match then
+    FINAL(TEXT("Phone number search completed:", "Status: Found", "Phone: " .. match, "Location: Contact section"))
+else
+    FINAL(TEXT("Phone number search completed:", "Status: Not found", "Context: No phone numbers in provided text"))
 end
 
 **Pattern 2: Count items**

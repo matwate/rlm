@@ -44,6 +44,14 @@ def extract_lua_code_blocks(text: str) -> list[str]:
     Returns:
         list: A list of strings, where each string is the content of a lua code block.
     """
+
+    final_match = re.search(r"FINAL\s*(?:\([^)]*\))?\s*\[\[", text)
+    if final_match:
+        rest = text[final_match.start() :]
+        closing = rest.find("]]")
+        if closing != -1:
+            return [rest[: closing + 2]]
+
     # Regex pattern breakdown:
     # ```         : Matches the opening three backticks.
     # lua         : Matches the specific language identifier 'lua'.

@@ -4,6 +4,8 @@ from typing import Callable
 
 import lupa.luajit21 as lupa
 
+from utils import lua_escape_string
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,12 +52,23 @@ class LuaRuntimeWrapper:
         """Setup FINAL() function to mark completion of recursion"""
 
         def close_loop(*args) -> None:
-            output = " ".join(str(arg) for arg in args)
+            output = "\n".join(str(arg) for arg in args)
             self.close_recursion = True
             self.final_message = output
 
         self.runtime.globals()["_finalize"] = close_loop
-        self.runtime.execute("FINAL =  function(...)  _finalize(...) end")
+
+        self.runtime.execute("""
+            function TEXT(...)
+                local parts = {}
+                for i = 1, select('#', ...) do
+                    parts[i] = tostring(select(i, ...))
+                end
+                return table.concat(parts, "\\n")
+            end
+            
+            FINAL = function(...) _finalize(...) end
+        """)
         logger.debug("Finalization function configured")
 
     def _setup_recursion(self) -> None:
@@ -152,7 +165,7 @@ class LuaRuntimeWrapper:
             value: Variable value (None sets to nil)
         """
         if value:
-            escaped = value.replace("]]", "\\]]")
+            escaped = lua_escape_string(value)
             self.runtime.execute(f"{name} = [[{escaped}]]")
             logger.debug(f"Set variable '{name}' (length: {len(value)})")
         else:
