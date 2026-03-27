@@ -3,8 +3,8 @@ import time
 
 import litellm
 
-from config import API_KEY, BASE_URL, MAX_RETRIES, MODEL, REQUEST_TIMEOUT
-from exceptions import (
+from rlm.infrastructure.config import create_config, Config
+from rlm.exceptions import (
     APIServerError,
     AuthenticationError,
     InvalidRequestError,
@@ -13,55 +13,51 @@ from exceptions import (
     RateLimitError,
     TimeoutError,
 )
+from rlm.retry_strategy import ExponentialBackoffStrategy, RetryStrategy
 
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_MAX_TOKENS = 3000
+
+
 class LLMClient:
-    def __init__(self, model: str | None = None):
-        """Initialize LLM client with optional model override"""
-        self.model = model or MODEL
-        self.api_key = API_KEY
-        self.base_url = BASE_URL
-        self.max_retries = MAX_RETRIES
-        self.timeout = REQUEST_TIMEOUT
+    def __init__(
+        self,
+        model: str | None = None,
+        config: Config = None,
+        retry_strategy: RetryStrategy = None,
+    ):
+        """Initialize LLM client with optional model override and config
+
+        Args:
+            model: Optional model override
+            config: Optional configuration object (creates default if None)
+            retry_strategy: Optional retry strategy (creates default if None)
+        """
+        self.config = config or create_config()
+        self.model = model or self.config.model
+        self.api_key = self.config.api_key
+        self.base_url = self.config.base_url
+        self.timeout = self.config.request_timeout
+        self.retry_strategy = retry_strategy or ExponentialBackoffStrategy(
+            max_retries=self.config.max_retries
+        )
 
         logger.info(f"Initialized LLMClient with model: {self.model}")
         if self.base_url:
             logger.info(f"Using custom base URL: {self.base_url}")
 
-    def _clean_markdown(self, content: str) -> str:
-        """Remove markdown code block markers from content"""
-        lines = content.split("\n")
-        cleaned = []
-        in_code_block = False
-        for line in lines:
-            if line.strip().startswith("```") or line.strip().endswith("```"):
-                in_code_block = not in_code_block
-                continue
-            if not in_code_block:
-                cleaned.append(line)
-        return "\n".join(cleaned).strip()
-
-    def _should_retry(self, error: Exception, attempt: int) -> bool:
-        """Determine if an error is retryable and if we should attempt retry"""
-        if attempt >= self.max_retries:
-            return False
-
-        if isinstance(error, RateLimitError):
-            return True
-
-        if isinstance(error, (APIServerError, TimeoutError)):
-            return True
-
-        return False
-
-    def _calculate_backoff(self, attempt: int) -> float:
-        """Calculate exponential backoff time in seconds"""
-        return min(2**attempt, 60)
-
     def _map_litellm_error(self, error: Exception, attempt: int) -> LLMClientError:
-        """Map litellm exceptions to custom exceptions"""
+        """Map litellm exceptions to custom exceptions
+
+        Args:
+            error: The exception that occurred
+            attempt: Current attempt number
+
+        Returns:
+            LLMClientError: Mapped exception
+        """
         error_message = str(error).lower()
 
         if "rate limit" in error_message or "429" in error_message:
@@ -89,14 +85,14 @@ class LLMClient:
             return APIServerError(f"API server error: {error}")
 
         return LLMClientError(
-            f"LLM API error (attempt {attempt + 1}/{self.max_retries}): {error}"
+            f"LLM API error (attempt {attempt + 1}/{self.retry_strategy.max_retries + 1}): {error}"
         )
 
     def get_query(
         self, messages: list[dict[str, str]], model: str | None = None
     ) -> str:
         """
-        Execute a query to the LLM with retry logic and error handling
+        Execute a query to LLM with retry logic and error handling
 
         Args:
             messages: List of message dicts with 'role' and 'content' keys
@@ -109,21 +105,22 @@ class LLMClient:
             LLMClientError: If all retry attempts fail
         """
         model_to_use = model or self.model
+        max_attempts = self.retry_strategy.max_retries + 1
 
-        for attempt in range(self.max_retries + 1):
+        for attempt in range(max_attempts):
             try:
                 logger.debug(
-                    f"Attempt {attempt + 1}/{self.max_retries + 1} for model {model_to_use}"
+                    f"Attempt {attempt + 1}/{max_attempts} for model {model_to_use}"
                 )
 
                 kwargs = {
                     "model": model_to_use,
                     "messages": messages,
                     "timeout": self.timeout,
-                    "max_tokens": 3000,
+                    "max_tokens": DEFAULT_MAX_TOKENS,
                 }
 
-                if self.base_url != "":
+                if self.base_url:
                     kwargs["api_base"] = self.base_url
 
                 if self.api_key:
@@ -143,11 +140,11 @@ class LLMClient:
                 mapped_error = self._map_litellm_error(e, attempt)
                 logger.warning(f"Request failed: {mapped_error}")
 
-                if not self._should_retry(mapped_error, attempt):
+                if not self.retry_strategy.should_retry(mapped_error, attempt):
                     raise mapped_error
 
-                backoff = self._calculate_backoff(attempt)
+                backoff = self.retry_strategy.calculate_backoff(attempt)
                 logger.info(f"Retrying in {backoff:.1f}s...")
                 time.sleep(backoff)
 
-        raise LLMClientError(f"All {self.max_retries + 1} attempts failed")
+        raise LLMClientError(f"All {max_attempts} attempts failed")

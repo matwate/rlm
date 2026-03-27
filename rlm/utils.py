@@ -66,34 +66,42 @@ def extract_lua_code_blocks(text: str) -> list[str]:
     matches = re.findall(pattern, text, re.DOTALL | re.IGNORECASE)
     logger.debug(f"Found {len(matches)} Lua code blocks")
 
-    return [fix_lua_loops(m) for m in matches]
+    return list(matches)
 
 
-def fix_lua_loops(code_string):
+def validate_lua_syntax(code: str) -> list[str]:
     """
-    Converts Python-style for loops into Lua ipairs syntax.
-    Fixes the issue where method colons (e.g. :gmatch) were confused for loop terminators.
+    Validate basic Lua syntax and return list of common Python-style errors.
+
+    Args:
+        code (str): The Lua code to validate.
+
+    Returns:
+        list: A list of error messages describing potential syntax issues.
     """
+    errors = []
 
-    def replacer(match):
-        var_name = match.group(1)
-        iterator = match.group(2)
+    if "len(" in code:
+        errors.append("Found Python len(), use # instead")
 
-        # If variable is 'i', use '_' to avoid 'for i, i in ...'
-        index_name = "i"
-        if var_name == "i":
-            index_name = "_"
+    if "for " in code and " in " in code and "for i = " not in code:
+        errors.append("Found Python-style 'for x in y', use ipairs() for tables")
 
-        return f"for {index_name}, {var_name} in ipairs({iterator}) do"
+    if "if " in code and "{" in code and " then " not in code:
+        errors.append("Found Python-style 'if x { ... }', use 'if x then ... end'")
 
-    # Regex Breakdown:
-    # for\s+(\w+)\s+in\s+(.*?)   -> Standard "for x in y" capture
-    # \s*                         -> Optional whitespace
-    # (?:                         -> Start non-capturing group for terminators
-    #   do                        -> Match "do"
-    #   |                         -> OR
-    #   :(?!\w)                   -> Match ":" ONLY if NOT followed by a letter/number/underscore
-    # )                           -> This prevents matching the ":" in "obj:method()"
-    pattern = r"for\s+(\w+)\s+in\s+(.*?)\s*(?:do|:(?!\w))"
+    if "+= " in code or "-= " in code:
+        errors.append("Found Python compound operators (+=, -=), not supported in Lua")
 
-    return re.sub(pattern, replacer, code_string, flags=re.DOTALL)
+    if " != " in code or " !=\n" in code:
+        errors.append("Found Python !=, use ~= instead")
+
+    if 'print(f"' in code or "print(f'" in code:
+        errors.append(
+            "Found Python f-strings, use string concatenation with .. instead"
+        )
+
+    if errors:
+        logger.debug(f"Lua validation errors: {errors}")
+
+    return errors

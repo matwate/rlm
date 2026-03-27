@@ -78,11 +78,6 @@ class Config:
         logger.info(f"Log level: {self.log_level}")
 
 
-config = Config()
-
-API_KEY = config.api_key
-BASE_URL = config.base_url
-MODEL = config.model
-MAX_RETRIES = config.max_retries
-REQUEST_TIMEOUT = config.request_timeout
-LOG_LEVEL = config.log_level
+def create_config() -> Config:
+    """Factory function to create and return a Config instance"""
+    return Config()
