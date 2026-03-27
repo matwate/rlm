@@ -14,6 +14,10 @@ uv pip install -e .
 rlm --help
 ```
 
+## Configuration
+
+Check `.env.example`, it uses litellm for the ai integration.
+
 ## Structure
 
 - `rlm/` - Core package
