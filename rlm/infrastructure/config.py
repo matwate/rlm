@@ -1,9 +1,8 @@
 import logging
 import os
-
-import dotenv
 from dataclasses import dataclass
 
+import dotenv
 
 dotenv.load_dotenv()
 
@@ -18,6 +17,8 @@ class Config:
     max_retries: int = 3
     request_timeout: int = 60
     log_level: str = "INFO"
+    max_iters: int = 10
+    max_depth: int = 5
 
     def __post_init__(self):
         """Load configuration from environment variables and validate"""
@@ -32,6 +33,8 @@ class Config:
             self.request_timeout = int(os.getenv("REQUEST_TIMEOUT", "60"))
 
         self.log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+        self.max_iters = int(os.getenv("MAX_ITERS", 10))
+        self.max_depth = int(os.getenv("MAX_DEPTH", 5))
 
         self._validate()
         self._setup_logging()
@@ -52,6 +55,12 @@ class Config:
 
         if self.max_retries < 0:
             raise ValueError("MAX_RETRIES must be non-negative")
+
+        if self.max_iters < -1 or self.max_iters == 0:
+            raise ValueError("MAX_ITERS must be positive or -1 for indefinite")
+
+        if self.max_depth <= 0:
+            raise ValueError("MAX_DEPTh must be positive")
 
         if self.request_timeout <= 0:
             raise ValueError("REQUEST_TIMEOUT must be positive")

@@ -1,11 +1,13 @@
 import logging
 import re
+from typing import Optional
 
-from rlm.infrastructure.api_client import LLMClient
 from rlm.exceptions import LLMClientError
-from rlm.lua.lua_runtime import LuaRuntimeWrapper
+from rlm.infrastructure.api_client import LLMClient
+from rlm.infrastructure.config import Config, create_config
 from rlm.infrastructure.message_manager import MessageManager
 from rlm.infrastructure.recursion_handler import RecursionHandler
+from rlm.lua.lua_runtime import LuaRuntimeWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +17,10 @@ class RLM:
         self,
         initial_prompt: str,
         initial_context: str = "",
-        max_depth: int = 5,
         current_depth: int = 0,
-        disable_guards: bool = False,
-        quiet: bool = False,
         init_ai: bool = True,
         query_callback=None,
+        config: Optional[Config] = None,
     ):
         """Initialize RLM (Recursive Language Model) instance
 
@@ -30,22 +30,21 @@ class RLM:
             max_depth: Maximum recursion depth (default: 5)
             current_depth: Current recursion depth (default: 0)
             disable_guards: Disable recursion/iteration guards (default: False)
-            quiet: Suppress output (default: False)
             init_ai: Initialize AI components (LLM, message manager, recursion) (default: True)
             query_callback: Callback function for tracking Lua queries (query, result, output) -> None
         """
-        self.quiet = quiet
-        if self.quiet:
-            logging.basicConfig(filename="app.log", level=logging.ERROR)
         self.init_ai = init_ai
         self.query_callback = query_callback
+        self.config = config or create_config()
+        max_depth = self.config.max_depth
 
         if init_ai:
-            self.llm = LLMClient()
+            self.llm = LLMClient(config=self.config)
+            logger.debug("LLM Client Initialized")
 
             # Initialize recursion handler
             self.recursion_handler = RecursionHandler(
-                max_depth, disable_guards, quiet, len(initial_context)
+                max_depth, self.config.max_iters == -1, len(initial_context)
             )
             self.recursion_handler.set_depth(current_depth)
             self.recursion_handler.set_sub_rlm_factory(self._create_sub_rlm)
@@ -64,6 +63,8 @@ class RLM:
                 recursion_callback=self.recursion_handler.handle_recursion,
                 enable_ai_features=True,
             )
+
+            logger.debug("Lua Runtime Initialized")
         else:
             # Initialize Lua runtime without AI features
             self.runtime = LuaRuntimeWrapper(
@@ -75,6 +76,7 @@ class RLM:
         self.runtime.set_variable("context", initial_context)
         self.runtime.set_depth(current_depth, max_depth)
 
+        logger.debug("Lua Runtime Initialized")
         # Store final message property reference
         self._final_message = ""
 
@@ -84,7 +86,6 @@ class RLM:
         self,
         initial_prompt: str,
         initial_context: str,
-        max_depth: int,
         current_depth: int,
     ) -> "RLM":
         """Factory method to create sub-RLM instances for recursion
@@ -101,10 +102,7 @@ class RLM:
         return RLM(
             initial_prompt=initial_prompt,
             initial_context=initial_context,
-            max_depth=max_depth,
             current_depth=current_depth,
-            disable_guards=self.recursion_handler.disable_guards,
-            quiet=self.quiet,
         )
 
     @property
@@ -125,8 +123,7 @@ class RLM:
         try:
             logger.debug("Executing LLM query")
             response = self.llm.get_query(self.message_manager.get_messages())
-            if not self.quiet:
-                print(response)
+            logger.debug(response)
             queries = re.findall(
                 r"```lua\s*(.*?)\s*```", response, re.DOTALL | re.IGNORECASE
             )
@@ -137,8 +134,8 @@ class RLM:
                 try:
                     captured_output_copy = list(self.runtime.captured_output)
                     result = self.runtime.execute_query(q)
-                    if self.runtime.captured_output and not self.quiet:
-                        print(self.runtime.captured_output)
+                    if self.runtime.captured_output:
+                        logger.debug(self.runtime.captured_output)
                     results.append(result)
 
                     if self.query_callback:
@@ -206,7 +203,7 @@ class RLM:
             logger.error(f"Unexpected error in iteration: {type(e).__name__}: {e}")
             raise
 
-    def run(self, max_iter: int = 10) -> None:
+    def run(self) -> None:
         """Run the RLM loop until completion or max iterations
 
         Args:
@@ -215,23 +212,22 @@ class RLM:
         Raises:
             LLMClientError: If LLM API call fails
             RuntimeError: If max iterations or recursion depth exceeded
+
         """
+        max_iter = self.config.max_iters
         i = 0
-        actual_max_iter = (
-            float("inf") if self.recursion_handler.disable_guards else max_iter
-        )
+        actual_max_iter = float("inf") if max_iter == -1 else max_iter
         logger.info(f"Starting RLM run with max_iter={actual_max_iter}")
 
         while not self.runtime.close_recursion and i < actual_max_iter:
             should_end = self._run_iteration()
-            if should_end and not self.quiet:
-                print(self.runtime.captured_output)
+            if should_end:
+                logger.debug(self.runtime.captured_output)
                 break
             i += 1
 
         if i == actual_max_iter:
-            if not self.quiet:
-                print("MAX ITERATIONS REACHED, BREAKING EARLY")
+            logger.debug("MAX ITERATIONS REACHED, BREAKING EARLY")
             logger.warning(f"Max iterations ({max_iter}) reached")
 
         self._final_message = self.runtime.final_message

@@ -11,7 +11,6 @@ class RecursionHandler:
         self,
         max_depth: int = 5,
         disable_guards: bool = False,
-        quiet: bool = False,
         ctx_length: int = 0,
     ):
         """Initialize recursion handler
@@ -22,10 +21,8 @@ class RecursionHandler:
             quiet: Suppress output (default: False)
             ctx_length: Context length for logging (default: 0)
         """
-        self.max_depth = max_depth
         self.current_depth = 0
         self.disable_guards = disable_guards
-        self.quiet = quiet
         self.ctx_length = ctx_length
         self._sub_rlm_factory: Callable | None = None
 
@@ -70,7 +67,6 @@ class RecursionHandler:
         sub_rlm = self._sub_rlm_factory(
             initial_prompt=sub_prompt,
             initial_context=str(sub_context) if sub_context else "",
-            max_depth=self.max_depth,
             current_depth=self.current_depth + 1,
         )
 

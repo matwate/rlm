@@ -36,18 +36,11 @@ def parse_args():
     """
     parser = argparse.ArgumentParser(description="RLM - Recursive Language Model")
     parser.add_argument(
-        "--no-guards", action="store_true", help="Disable depth and iteration guards"
-    )
-    parser.add_argument(
         "--prompt",
         type=str,
         help="Prompt to pass the ai",
     )
     parser.add_argument("--file", type=str, help="File to analyze")
-    parser.add_argument(
-        "--max-depth", type=int, default=5, help="Maximum recursion depth"
-    )
-    parser.add_argument("--max-iter", type=int, default=10, help="Maximum iterations")
     parser.add_argument(
         "--repl-only",
         action="store_true",
@@ -102,9 +95,6 @@ def main():
         model = RLM(
             initial_prompt=args.prompt,
             initial_context=contents,
-            max_depth=args.max_depth,
-            disable_guards=args.no_guards,
-            quiet=True,
             init_ai=False,
         )
         print("REPL mode - Lua runtime initialized (AI disabled)")
@@ -153,12 +143,9 @@ def main():
         model = RLM(
             initial_prompt=prompt,
             initial_context=contents,
-            max_depth=args.max_depth,
-            disable_guards=args.no_guards,
-            quiet=True,
             query_callback=query_callback,
         )
-        model.run(max_iter=args.max_iter)
+        model.run()
 
         markdown = Markdown(model._final_message)
         console.print(markdown)

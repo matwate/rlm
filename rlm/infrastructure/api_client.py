@@ -1,9 +1,9 @@
 import logging
 import time
+from typing import Optional
 
 import litellm
 
-from rlm.infrastructure.config import create_config, Config
 from rlm.exceptions import (
     APIServerError,
     AuthenticationError,
@@ -13,6 +13,7 @@ from rlm.exceptions import (
     RateLimitError,
     TimeoutError,
 )
+from rlm.infrastructure.config import Config, create_config
 from rlm.retry_strategy import ExponentialBackoffStrategy, RetryStrategy
 
 logger = logging.getLogger(__name__)
@@ -25,8 +26,8 @@ class LLMClient:
     def __init__(
         self,
         model: str | None = None,
-        config: Config = None,
-        retry_strategy: RetryStrategy = None,
+        config: Optional[Config] = None,
+        retry_strategy: Optional[RetryStrategy] = None,
     ):
         """Initialize LLM client with optional model override and config
 

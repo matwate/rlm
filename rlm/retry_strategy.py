@@ -6,7 +6,6 @@ class RetryStrategy:
 
     def should_retry(self, error: Exception, attempt: int) -> bool:
         """Determine if an error is retryable and if we should attempt retry
-
         Args:
             error: The error that occurred
             attempt: Current attempt number (0-indexed)
